@@ -34,8 +34,8 @@ export default function Sidebar({ currentView, onViewChange }: SidebarProps) {
   const navItems: Array<{ id: ViewType; icon: typeof MdCalendarToday; label: string; active: boolean }> = [
     { id: 'calendar', icon: MdCalendarToday, label: 'Calendar', active: true },
     { id: 'email', icon: MdEmail, label: 'Email', active: true },
-    { id: 'tasks', icon: MdTask, label: 'Tasks', active: false },
-    { id: 'docs', icon: MdFolder, label: 'Documents', active: false },
+    { id: 'tasks', icon: MdTask, label: 'Tasks', active: true },
+    { id: 'docs', icon: MdFolder, label: 'Documents', active: true },
   ]
 
   return (
@@ -49,14 +49,12 @@ export default function Sidebar({ currentView, onViewChange }: SidebarProps) {
     >
       {/* Logo / Brand */}
       <div className="mb-8 flex items-center justify-center">
-        <div 
-          className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-lg transition-colors"
-          style={{
-            backgroundColor: 'var(--text-primary)',
-            color: 'var(--bg-primary)',
-          }}
-        >
-          10x
+        <div className="w-10 h-10 flex items-center justify-center">
+          <img 
+            src={isDarkMode ? '/core_text_white.png' : '/core_text_black.png'}
+            alt="Core"
+            className="w-full h-full object-contain"
+          />
         </div>
       </div>
 

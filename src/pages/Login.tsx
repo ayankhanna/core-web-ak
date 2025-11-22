@@ -11,6 +11,11 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const [currentUser, setCurrentUser] = useState<any>(null)
 
+  // Set page title
+  useEffect(() => {
+    document.title = 'Core - Login'
+  }, [])
+
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()

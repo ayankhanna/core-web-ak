@@ -104,24 +104,8 @@ export default function CalendarComponent({ events, userId, onRefresh }: Calenda
 
   // Header date formatting
   const headerTitle = useMemo(() => {
-    if (view === 'month') {
-      return format(currentDate, 'MMMM yyyy')
-    } else {
-      const weekStart = startOfWeek(currentDate)
-      const weekEnd = endOfWeek(currentDate)
-      const startMonth = format(weekStart, 'MMMM')
-      const endMonth = format(weekEnd, 'MMMM')
-      const startDay = format(weekStart, 'd')
-      const endDay = format(weekEnd, 'd')
-      const year = format(weekEnd, 'yyyy')
-      
-      // If week spans two months, show both
-      if (startMonth !== endMonth) {
-        return `${startMonth} ${startDay} - ${endMonth} ${endDay} ${year}`
-      }
-      return `${startMonth} ${startDay}-${endDay} ${year}`
-    }
-  }, [currentDate, view])
+    return format(currentDate, 'MMMM yyyy')
+  }, [currentDate])
 
   // Navigation
   const next = () => {
@@ -210,30 +194,28 @@ export default function CalendarComponent({ events, userId, onRefresh }: Calenda
       )}
 
       {/* Header */}
-      <div className="px-6 py-4 flex items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)] z-10">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={prev} 
-              className="p-1.5 rounded-md hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all"
-            >
-              <MdChevronLeft size={20} />
-            </button>
-            
-            <h1 className="text-2xl font-bold text-[var(--text-primary)] tracking-tight min-w-[280px] text-center">
-              {headerTitle}
-            </h1>
-            
-            <button 
-              onClick={next} 
-              className="p-1.5 rounded-md hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all"
-            >
-              <MdChevronRight size={20} />
-            </button>
-          </div>
+      <div className="px-6 py-4 flex items-center justify-center border-b border-[var(--border-color)] bg-[var(--bg-primary)] z-10 relative">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={prev} 
+            className="p-1.5 rounded-md hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all"
+          >
+            <MdChevronLeft size={20} />
+          </button>
+          
+          <h1 className="text-2xl font-medium text-[var(--text-primary)] tracking-tight min-w-[200px] text-center">
+            {headerTitle}
+          </h1>
+          
+          <button 
+            onClick={next} 
+            className="p-1.5 rounded-md hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all"
+          >
+            <MdChevronRight size={20} />
+          </button>
         </div>
 
-        <div className="flex items-center bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-color)] p-0.5">
+        <div className="absolute right-6 flex items-center bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-color)] p-0.5">
           <button
             onClick={() => setView('week')}
             className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${

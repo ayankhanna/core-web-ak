@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { fetchEmails, syncEmails } from '@/lib/api-client'
 import type { Email } from '@/lib/api-client'
 import EmailList from './EmailList'
@@ -9,31 +9,23 @@ interface EmailLayoutProps {
   userId: string
 }
 
+// Cache outside component to persist across remounts
+const emailCache: { [userId: string]: { emails: Email[], timestamp: number } } = {}
+const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+
 export default function EmailLayout({ userId }: EmailLayoutProps) {
   const [emails, setEmails] = useState<Email[]>([])
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [syncing, setSyncing] = useState(false)
-  const [lastSynced, setLastSynced] = useState<Date | null>(null)
-
-  const loadEmails = async () => {
-    setLoading(true)
-    try {
-      const response = await fetchEmails(userId)
-      setEmails(response.emails || [])
-    } catch (error) {
-      console.error('Error loading emails:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const [loading, setLoading] = useState<boolean>(true)
+  const [syncing, setSyncing] = useState<boolean>(false)
+  const initialLoadDone = useRef(false)
 
   const handleSync = async () => {
     setSyncing(true)
     try {
       await syncEmails(userId)
-      await loadEmails()
-      setLastSynced(new Date())
+      // Force reload emails after sync (bypass cache)
+      await loadEmails(true)
     } catch (error) {
       console.error('Error syncing emails:', error)
     } finally {
@@ -41,8 +33,63 @@ export default function EmailLayout({ userId }: EmailLayoutProps) {
     }
   }
 
+  const loadEmails = async (skipCacheCheck = false) => {
+    const now = Date.now()
+    const cached = emailCache[userId]
+
+    // Use cache if available and fresh
+    if (!skipCacheCheck && cached && (now - cached.timestamp < CACHE_DURATION)) {
+      console.log('📦 Email cache still fresh, skipping fetch')
+      return
+    }
+
+    try {
+      console.log('🔄 Fetching fresh emails from API...')
+      const response = await fetchEmails(userId)
+      const newEmails = response.emails || []
+      
+      // Only update if changed
+      const hasChanges = JSON.stringify(newEmails) !== JSON.stringify(cached?.emails || [])
+      if (hasChanges || !cached) {
+        console.log('✨ Updated with', newEmails.length, 'emails')
+        setEmails(newEmails)
+      } else {
+        console.log('✓ Email data unchanged')
+      }
+      
+      // Update cache
+      emailCache[userId] = {
+        emails: newEmails,
+        timestamp: now
+      }
+      
+      // Auto-trigger sync if no emails found (first time user)
+      if (newEmails.length === 0 && !initialLoadDone.current) {
+        console.log('📭 No emails in database, triggering initial sync...')
+        handleSync()
+      }
+    } catch (error) {
+      console.error('❌ Error loading emails:', error)
+    }
+  }
+
   useEffect(() => {
-    loadEmails()
+    // Load from cache instantly if available
+    const cached = emailCache[userId]
+    if (cached) {
+      console.log('⚡ Loading emails from cache instantly')
+      setEmails(cached.emails)
+    }
+
+    // Stop loading state immediately
+    setLoading(false)
+    initialLoadDone.current = true
+
+    // Fetch fresh data in background
+    loadEmails().catch(err => {
+      console.warn('Background email fetch failed:', err)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
   // Detail View
@@ -90,12 +137,18 @@ export default function EmailLayout({ userId }: EmailLayoutProps) {
         </div>
       </div>
 
-      <EmailList 
-        emails={emails} 
-        selectedEmailId={selectedEmail?.external_id || null}
-        onSelectEmail={setSelectedEmail}
-        loading={loading}
-      />
+      {(() => {
+        // @ts-ignore - TypeScript incorrectly infers selectedEmail type
+        const emailId: string | null = selectedEmail?.external_id ?? null
+        return (
+          <EmailList 
+            emails={emails}
+            selectedEmailId={emailId}
+            onSelectEmail={(email: Email) => setSelectedEmail(email)}
+            loading={loading}
+          />
+        )
+      })()}
     </div>
   )
 }

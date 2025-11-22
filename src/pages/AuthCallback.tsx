@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { completeOAuthFlow, ensureWatches } from '@/lib/api-client'
+import { completeOAuthFlow, ensureWatches, triggerManualSync } from '@/lib/api-client'
 
 export default function AuthCallback() {
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
+
+  // Set page title
+  useEffect(() => {
+    document.title = 'Core - Authenticating'
+  }, [])
 
   useEffect(() => {
     console.log('=== AUTH CALLBACK STARTED ===')
@@ -115,6 +120,16 @@ export default function AuthCallback() {
           } catch (watchError: any) {
             // Don't fail login if watch setup fails - cron jobs will retry
             console.warn('⚠️ Watch setup error (will retry automatically):', watchError.message)
+          }
+          
+          // Trigger initial sync to populate calendar and emails
+          console.log('🔄 Triggering initial sync...')
+          try {
+            const syncResult = await triggerManualSync(userId)
+            console.log('✅ Initial sync completed:', syncResult)
+          } catch (syncError: any) {
+            // Don't fail login if initial sync fails - user can manually sync later
+            console.warn('⚠️ Initial sync error (non-critical):', syncError.message)
           }
           
           console.log('✅ User created successfully! Navigating to dashboard...')

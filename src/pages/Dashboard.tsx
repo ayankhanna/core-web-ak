@@ -6,10 +6,11 @@ import { getAllEvents, ensureWatches } from '@/lib/api-client'
 import type { CalendarEvent } from '@/lib/api-client'
 import Sidebar from '@/components/layout/Sidebar'
 import CalendarComponent from '@/components/calendar/Calendar'
-import PlaceholderView from '@/components/PlaceholderView'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 
 import EmailLayout from '@/components/email/EmailLayout'
+import { Documents } from '@/components/documents/Documents'
+import { Tasks } from '@/components/tasks'
 
 type User = {
   id: string
@@ -32,6 +33,17 @@ export default function Dashboard() {
   const eventCache = useRef<{ [key: string]: { events: CalendarEvent[], timestamp: number } }>({})
   const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
+  // Update document title based on current view
+  useEffect(() => {
+    const viewTitles: Record<ViewType, string> = {
+      calendar: 'Core - Calendar',
+      email: 'Core - Email',
+      tasks: 'Core - Tasks',
+      docs: 'Core - Docs'
+    }
+    document.title = viewTitles[currentView]
+  }, [currentView])
+
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser()
@@ -52,6 +64,22 @@ export default function Dashboard() {
         setUser(userData)
       }
 
+      // Load from cache immediately if available
+      const cached = eventCache.current[authUser.id]
+      if (cached) {
+        console.log('⚡ Loading from cache instantly')
+        setEvents(cached.events)
+        setLastSynced(new Date(cached.timestamp))
+      }
+
+      // Stop showing loading state
+      setLoading(false)
+
+      // Fetch fresh data in background (non-blocking)
+      fetchEvents(authUser.id, false).catch(err => {
+        console.warn('Background fetch failed:', err)
+      })
+
       // Ensure watch subscriptions are active (runs in background)
       ensureWatches(authUser.id)
         .then(watchResult => {
@@ -63,11 +91,6 @@ export default function Dashboard() {
         .catch(err => {
           console.warn('⚠️ Watch check failed (non-critical):', err.message)
         })
-
-      // Initial fetch with cache check
-      await fetchEvents(authUser.id)
-
-      setLoading(false)
     }
 
     checkAuth()
@@ -77,21 +100,27 @@ export default function Dashboard() {
     const now = Date.now()
     const cached = eventCache.current[userId]
 
+    // Skip fetch if cache is still fresh (unless force refresh)
     if (!forceRefresh && cached && (now - cached.timestamp < CACHE_DURATION)) {
-      console.log('📦 Using cached events')
-      setEvents(cached.events)
-      setLastSynced(new Date(cached.timestamp))
+      console.log('📦 Cache still fresh, skipping API call')
       return
     }
 
     try {
-      console.log('🌍 Fetching events from API...')
+      console.log('🔄 Fetching fresh data from API...')
       const response = await getAllEvents(userId)
-      console.log('📅 API Response:', response)
-      console.log('📅 Events count:', response.events?.length || 0)
       
       const newEvents = response.events || []
-      setEvents(newEvents)
+      
+      // Only update UI if data actually changed
+      const hasChanges = JSON.stringify(newEvents) !== JSON.stringify(cached?.events || [])
+      if (hasChanges || !cached) {
+        console.log('✨ Updated with', newEvents.length, 'events', response.source ? `(source: ${response.source})` : '')
+        setEvents(newEvents)
+      } else {
+        console.log('✓ Data unchanged')
+      }
+      
       setLastSynced(new Date())
       
       // Update cache
@@ -100,7 +129,7 @@ export default function Dashboard() {
         timestamp: now
       }
     } catch (err: any) {
-      console.error('Error fetching events:', err)
+      console.error('❌ Error fetching events:', err)
     }
   }
 
@@ -122,19 +151,9 @@ export default function Dashboard() {
       case 'email':
         return user ? <EmailLayout userId={user.id} /> : null
       case 'tasks':
-        return (
-          <PlaceholderView
-            title="Tasks"
-            description="Organize and track your tasks with ease."
-          />
-        )
+        return <Tasks />
       case 'docs':
-        return (
-          <PlaceholderView
-            title="Documents"
-            description="Store and manage your documents in one place."
-          />
-        )
+        return <Documents />
       default:
         return null
     }

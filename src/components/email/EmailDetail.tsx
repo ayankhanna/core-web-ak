@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react'
 import { format } from 'date-fns'
-import { fetchEmails, syncEmails, getEmailDetails, sendEmail } from '@/lib/api-client'
+import { getThreadEmails, sendEmail } from '@/lib/api-client'
 import type { Email, EmailDetail as EmailDetailType } from '@/lib/api-client'
-import { MdArrowBack, MdSend, MdAttachFile, MdFormatBold, MdFormatItalic, MdFormatListBulleted } from 'react-icons/md'
+import { MdArrowBack, MdSend, MdAttachFile } from 'react-icons/md'
 
 interface EmailDetailProps {
   email: Email
@@ -11,30 +11,66 @@ interface EmailDetailProps {
 }
 
 export default function EmailDetail({ email, userId, onClose }: EmailDetailProps) {
-  const [detail, setDetail] = useState<EmailDetailType | null>(null)
+  const [threadEmails, setThreadEmails] = useState<EmailDetailType[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   
   // Reply state
   const [replyBody, setReplyBody] = useState('')
   const [sending, setSending] = useState(false)
-  const [replySuccess, setReplySuccess] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  
+  // Resizer state
+  const [rightPanelWidth, setRightPanelWidth] = useState(420)
+  const [isResizing, setIsResizing] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Scroll to bottom when messages load or change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [threadEmails])
+
+  // Handle resize
+  useEffect(() => {
+    if (!isResizing) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return
+      const containerRect = containerRef.current.getBoundingClientRect()
+      const newWidth = containerRect.right - e.clientX
+      // Constrain between 300px and 600px
+      setRightPanelWidth(Math.max(300, Math.min(600, newWidth)))
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing])
 
   useEffect(() => {
     let mounted = true
 
-    const fetchDetails = async () => {
+    const fetchThreadDetails = async () => {
       setLoading(true)
       setError(null)
       try {
-        const response = await getEmailDetails(userId, email.external_id)
+        // Fetch all emails in the thread
+        const response = await getThreadEmails(userId, email.thread_id || email.external_id)
         if (mounted) {
-          setDetail(response.email)
+          setThreadEmails(response.emails || [])
         }
       } catch (err: any) {
         if (mounted) {
-          console.error('Error fetching email details:', err)
-          setError('Failed to load email content')
+          console.error('Error fetching thread details:', err)
+          setError('Failed to load conversation')
         }
       } finally {
         if (mounted) {
@@ -43,31 +79,41 @@ export default function EmailDetail({ email, userId, onClose }: EmailDetailProps
       }
     }
 
-    fetchDetails()
+    fetchThreadDetails()
 
     return () => {
       mounted = false
     }
-  }, [email.external_id, userId])
+  }, [email.external_id, email.thread_id, userId])
 
   const handleSendReply = async () => {
     if (!replyBody.trim()) return
     
     setSending(true)
     try {
+      const latestMsg = threadEmails.length > 0 ? threadEmails[threadEmails.length - 1] : email
       // Clean sender for reply TO
-      const replyTo = email.from.match(/<([^>]+)>/)?.[1] || email.from
+      const replyTo = latestMsg.from.match(/<([^>]+)>/)?.[1] || latestMsg.from
       
       await sendEmail(userId, {
         to: replyTo,
-        subject: email.subject.startsWith('Re:') ? email.subject : `Re: ${email.subject}`,
+        subject: latestMsg.subject.startsWith('Re:') ? latestMsg.subject : `Re: ${latestMsg.subject}`,
         body: replyBody,
         thread_id: email.thread_id
       })
       
       setReplyBody('')
-      setReplySuccess(true)
-      setTimeout(() => setReplySuccess(false), 3000)
+      
+      // Refresh the thread to show the new message
+      const refreshThread = async () => {
+        try {
+          const response = await getThreadEmails(userId, email.thread_id || email.external_id)
+          setThreadEmails(response.emails || [])
+        } catch (err) {
+          console.error('Failed to refresh thread:', err)
+        }
+      }
+      await refreshThread()
     } catch (err: any) {
       console.error('Failed to send reply:', err)
       alert('Failed to send reply. Please try again.')
@@ -78,17 +124,99 @@ export default function EmailDetail({ email, userId, onClose }: EmailDetailProps
 
   const getSenderName = (from: string) => {
     const match = from.match(/^"?(.*?)"?\s*<.*>$/)
-    return match ? match[1] : from
+    return match ? match[1] : from.split('<')[0].trim() || from
   }
 
-  const getSenderEmail = (from: string) => {
+  const getEmailAddress = (from: string) => {
     const match = from.match(/<([^>]+)>/)
     return match ? match[1] : from
   }
 
+  const stripQuotedText = (body: string): string => {
+    if (!body) return body
+    
+    // Remove Gmail's quoted reply markers
+    let cleaned = body.replace(/On\s+.+?wrote:\s*\n+>?.*/gis, '')
+    cleaned = cleaned.split('\n').filter(line => !line.trim().startsWith('>')).join('\n')
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
+    
+    return cleaned.trim()
+  }
+
+  // Determine if message is from current user (sent by me)
+  // Simple logic: if the message has 'SENT' label, it was sent by the user
+  const isFromCurrentUser = (msg: EmailDetailType) => {
+    const hasSentLabel = msg.labels?.includes('SENT') || msg.labels?.includes('Sent')
+    return hasSentLabel
+  }
+
+  // Get user's email from any sent message in the thread
+  const getUserEmail = () => {
+    // Find a message with SENT label - that's from the user
+    const sentMessage = threadEmails.find(msg => 
+      msg.labels?.includes('SENT') || msg.labels?.includes('Sent')
+    )
+    
+    if (sentMessage) {
+      return getEmailAddress(sentMessage.from).toLowerCase()
+    }
+    
+    // Fallback: user is the recipient of the first received message
+    const receivedMessage = threadEmails.find(msg => 
+      !msg.labels?.includes('SENT') && !msg.labels?.includes('Sent')
+    )
+    
+    if (receivedMessage) {
+      return getEmailAddress(receivedMessage.to).toLowerCase()
+    }
+    
+    // Last fallback
+    return threadEmails.length > 0 
+      ? getEmailAddress(threadEmails[0].to).toLowerCase()
+      : getEmailAddress(email.to).toLowerCase()
+  }
+
+  // Get the other person in conversation
+  const getOtherPerson = () => {
+    const userEmail = getUserEmail().toLowerCase().trim()
+    
+    if (threadEmails.length > 0) {
+      // Find first message from someone who isn't the user
+      for (const msg of threadEmails) {
+        const msgFromEmail = getEmailAddress(msg.from).toLowerCase().trim()
+        if (msgFromEmail !== userEmail) {
+          return getSenderName(msg.from)
+        }
+      }
+      // If all messages are from user, get the recipient from first message
+      const firstMsgTo = getEmailAddress(threadEmails[0].to).toLowerCase().trim()
+      if (firstMsgTo !== userEmail) {
+        return getSenderName(threadEmails[0].to)
+      }
+      // Last resort - check other recipients
+      for (const msg of threadEmails) {
+        const msgToEmail = getEmailAddress(msg.to).toLowerCase().trim()
+        if (msgToEmail !== userEmail) {
+          return getSenderName(msg.to)
+        }
+      }
+    }
+    
+    // Fallback to initial email
+    const initialFromEmail = getEmailAddress(email.from).toLowerCase().trim()
+    if (initialFromEmail !== userEmail) {
+      return getSenderName(email.from)
+    }
+    return getSenderName(email.to)
+  }
+
+  const getOtherPersonInitial = () => {
+    return getOtherPerson().charAt(0).toUpperCase()
+  }
+
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex items-center justify-center bg-[var(--bg-primary)]">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
       </div>
     )
@@ -96,19 +224,25 @@ export default function EmailDetail({ email, userId, onClose }: EmailDetailProps
 
   if (error) {
     return (
-      <div className="h-full flex items-center justify-center text-red-500">
+      <div className="h-full flex items-center justify-center text-red-500 bg-[var(--bg-primary)]">
         <p>{error}</p>
         <button onClick={onClose} className="ml-4 underline">Go Back</button>
       </div>
     )
   }
 
-  const displayEmail = detail || email
+  const latestEmail = threadEmails.length > 0 ? threadEmails[threadEmails.length - 1] : email
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-primary)]">
-      {/* Header - Back Button & Subject */}
-      <div className="flex items-center gap-4 px-6 py-4 border-b border-[var(--border-color)] bg-[var(--bg-primary)] flex-shrink-0">
+    <div 
+      className="h-full flex flex-col bg-[var(--bg-primary)]"
+      style={{ 
+        userSelect: isResizing ? 'none' : 'auto',
+        cursor: isResizing ? 'col-resize' : 'auto'
+      }}
+    >
+      {/* Header - Back Button, Avatar, Name & Subject */}
+      <div className="flex items-center gap-4 px-6 py-4 border-b border-[var(--border-color)] bg-[var(--bg-primary)] flex-shrink-0 shadow-sm">
         <button 
           onClick={onClose}
           className="p-2 -ml-2 rounded-full hover:bg-[var(--bg-secondary)] transition-colors text-[var(--text-secondary)]"
@@ -117,101 +251,147 @@ export default function EmailDetail({ email, userId, onClose }: EmailDetailProps
           <MdArrowBack size={22} />
         </button>
         
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-semibold text-[var(--text-primary)] truncate">
-            {displayEmail.subject}
-          </h1>
-        </div>
-        
-        <div className="text-sm text-[var(--text-tertiary)] whitespace-nowrap">
-          {displayEmail.received_at && format(new Date(displayEmail.received_at), 'MMM d, h:mm a')}
+        {/* Avatar & Name */}
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-base font-semibold shadow-sm flex-shrink-0">
+            {getOtherPersonInitial()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-[var(--text-primary)] truncate">
+              {getOtherPerson()}
+            </h2>
+            <p className="text-xs text-[var(--text-tertiary)] truncate">
+              {latestEmail.subject}
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Main Content Area - Split View */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main Content - Split View */}
+      <div ref={containerRef} className="flex-1 flex overflow-hidden">
         
-        {/* Left: Message Body (Scrollable) */}
-        <div className="flex-1 overflow-y-auto p-8 border-r border-[var(--border-color)]">
-          
-          {/* Sender Info */}
-          <div className="flex items-center gap-4 mb-8">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xl font-medium shadow-sm">
-              {getSenderName(displayEmail.from).charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <div className="text-base font-semibold text-[var(--text-primary)]">
-                {getSenderName(displayEmail.from)}
-              </div>
-              <div className="text-sm text-[var(--text-tertiary)]">
-                {getSenderEmail(displayEmail.from)}
-              </div>
-            </div>
-          </div>
+        {/* Left: Messages Area - Chat Bubbles */}
+        <div className="flex-1 overflow-y-auto px-6 py-6 bg-[var(--bg-secondary)]/20">
+          <div className="space-y-4 pr-4">
+            {threadEmails.map((msg, index) => {
+              const isFromUser = isFromCurrentUser(msg)
+              const showDateDivider = index === 0 || 
+                (msg.received_at && threadEmails[index - 1]?.received_at && 
+                 format(new Date(msg.received_at), 'yyyy-MM-dd') !== 
+                 format(new Date(threadEmails[index - 1].received_at!), 'yyyy-MM-dd'))
 
-          {/* Email Content */}
-          <div className="prose dark:prose-invert max-w-none text-[var(--text-primary)]">
-            {detail?.body_html ? (
-               <div 
-                 dangerouslySetInnerHTML={{ __html: detail.body_html }} 
-                 className="email-content"
-                 style={{ fontFamily: 'inherit' }}
-               />
-            ) : (
-              <div className="whitespace-pre-wrap font-sans text-base leading-relaxed">
-                {detail?.body_plain || displayEmail.snippet}
-              </div>
-            )}
-          </div>
-          
-          {/* Attachments */}
-          {detail?.has_attachments && (
-            <div className="mt-10 pt-6 border-t border-[var(--border-color)]">
-              <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-4 flex items-center gap-2">
-                <MdAttachFile /> Attachments ({detail.attachment_count || 0})
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                {detail.attachments?.map((att: any, i: number) => (
-                  <div key={i} className="p-3 border border-[var(--border-color)] rounded-lg bg-[var(--bg-secondary)]/50 text-sm text-[var(--text-primary)] truncate">
-                    {att.filename || 'Unnamed File'}
+              return (
+                <div key={msg.external_id}>
+                  {/* Date Divider */}
+                  {showDateDivider && msg.received_at && (
+                    <div className="flex items-center justify-center my-6">
+                      <div className="px-4 py-1.5 bg-[var(--bg-secondary)] rounded-full text-xs text-[var(--text-tertiary)] font-medium">
+                        {format(new Date(msg.received_at), 'MMMM d, yyyy')}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Message Bubble */}
+                  <div className={`flex ${isFromUser ? 'justify-end' : 'justify-start'} items-end gap-2`}>
+                    {/* Avatar for received messages */}
+                    {!isFromUser && (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-xs font-semibold shadow-sm flex-shrink-0">
+                        {getOtherPersonInitial()}
+                      </div>
+                    )}
+
+                    <div className={`flex flex-col ${isFromUser ? 'items-end' : 'items-start'} max-w-[70%]`}>
+                      {/* Message Bubble */}
+                      <div
+                        className={`
+                          px-4 py-3 rounded-2xl shadow-sm
+                          ${isFromUser 
+                            ? 'bg-blue-600 text-white rounded-br-md' 
+                            : 'bg-[var(--bg-primary)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-bl-md'
+                          }
+                        `}
+                      >
+                        <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                          {msg.body ? stripQuotedText(msg.body) : msg.snippet}
+                        </div>
+
+                        {/* Attachments */}
+                        {msg.has_attachments && msg.attachments && msg.attachments.length > 0 && (
+                          <div className="mt-3 space-y-2">
+                            {msg.attachments.map((att: any, i: number) => (
+                              <div 
+                                key={i} 
+                                className={`
+                                  px-3 py-2 rounded-lg text-xs flex items-center gap-2
+                                  ${isFromUser 
+                                    ? 'bg-blue-500/30 text-white' 
+                                    : 'bg-[var(--bg-secondary)] text-[var(--text-primary)]'
+                                  }
+                                `}
+                              >
+                                <MdAttachFile size={14} />
+                                <span className="truncate">{att.filename || 'Unnamed File'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Timestamp */}
+                      <div className="text-xs text-[var(--text-tertiary)] mt-1 px-1">
+                        {msg.received_at && format(new Date(msg.received_at), 'h:mm a')}
+                      </div>
+                    </div>
+
+                    {/* Empty space for sent messages to balance layout */}
+                    {isFromUser && <div className="w-8 flex-shrink-0" />}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                </div>
+              )
+            })}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
 
-        {/* Right: Reply Box (Fixed Width) */}
-        <div className="w-[400px] flex flex-col bg-[var(--bg-secondary)]/30 border-l border-[var(--border-color)]">
+        {/* Draggable Divider */}
+        <div 
+          className={`
+            w-1 bg-[var(--border-color)] hover:bg-blue-500 cursor-col-resize transition-colors relative group
+            ${isResizing ? 'bg-blue-500' : ''}
+          `}
+          onMouseDown={() => setIsResizing(true)}
+        >
+          {/* Visual indicator */}
+          <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-blue-500/10 transition-colors" />
+        </div>
+
+        {/* Right: Reply Panel */}
+        <div 
+          className="flex flex-col bg-[var(--bg-primary)]"
+          style={{ width: `${rightPanelWidth}px` }}
+        >
           <div className="p-6 flex-1 flex flex-col">
             <h3 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
-              Reply to {getSenderName(displayEmail.from)}
+              Reply to {getOtherPerson()}
             </h3>
             
-            <div className="flex-1 bg-[var(--bg-primary)] rounded-xl border border-[var(--border-color)] shadow-sm flex flex-col focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
-              {/* Toolbar */}
-              <div className="flex items-center gap-2 p-2 border-b border-[var(--border-color)]">
-                <button className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
-                  <MdFormatBold size={18} />
-                </button>
-                <button className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
-                  <MdFormatItalic size={18} />
-                </button>
-                <button className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
-                  <MdFormatListBulleted size={18} />
-                </button>
-              </div>
-
+            <div className="flex-1 bg-[var(--bg-secondary)]/30 rounded-2xl border border-[var(--border-color)] shadow-sm flex flex-col focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
               {/* Textarea */}
               <textarea
                 className="flex-1 w-full p-4 bg-transparent border-none resize-none focus:ring-0 text-[var(--text-primary)] placeholder-[var(--text-tertiary)]"
                 placeholder="Write your reply..."
                 value={replyBody}
                 onChange={(e) => setReplyBody(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault()
+                    handleSendReply()
+                  }
+                }}
               />
               
               {/* Footer Actions */}
-              <div className="p-3 flex items-center justify-between bg-[var(--bg-secondary)]/20 rounded-b-xl">
+              <div className="p-3 flex items-center justify-between bg-[var(--bg-secondary)]/20 border-t border-[var(--border-color)] rounded-b-2xl">
                 <button className="p-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors">
                   <MdAttachFile size={20} />
                 </button>
@@ -238,11 +418,9 @@ export default function EmailDetail({ email, userId, onClose }: EmailDetailProps
               </div>
             </div>
             
-            {replySuccess && (
-              <div className="mt-4 p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-sm rounded-lg text-center animate-fade-in">
-                Reply sent successfully!
-              </div>
-            )}
+            <p className="text-xs text-[var(--text-tertiary)] mt-3 text-center">
+              Press ⌘ + Enter to send
+            </p>
           </div>
         </div>
 

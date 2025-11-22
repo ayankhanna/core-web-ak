@@ -7,7 +7,7 @@ interface EmailListItemProps {
   onClick: () => void
 }
 
-export default function EmailListItem({ email, isSelected, onClick }: EmailListItemProps) {
+export default function EmailListItem({ email, onClick }: EmailListItemProps) {
   const date = email.received_at ? new Date(email.received_at) : new Date()
   
   const formatTime = (date: Date) => {
@@ -26,6 +26,9 @@ export default function EmailListItem({ email, isSelected, onClick }: EmailListI
     return match ? match[1] : from.split('<')[0].trim() || from
   }
 
+  const messageCount = email.message_count || 1
+  const hasMultipleMessages = messageCount > 1
+
   return (
     <div 
       onClick={onClick}
@@ -39,11 +42,25 @@ export default function EmailListItem({ email, isSelected, onClick }: EmailListI
         {/* Sender - Fixed Width */}
         <div className={`w-48 truncate flex-shrink-0 ${email.is_unread ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
           {getSenderName(email.from)}
+          {hasMultipleMessages && email.participant_count && email.participant_count > 1 && (
+            <span className="ml-1 text-xs text-[var(--text-tertiary)]">
+              +{email.participant_count - 1}
+            </span>
+          )}
         </div>
 
-        {/* Subject - Flex Grow */}
-        <div className="flex-1 truncate text-[var(--text-primary)]">
-          {email.subject}
+        {/* Subject and Snippet - Flex Grow */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-[var(--text-primary)]">
+              {email.subject}
+            </span>
+            {hasMultipleMessages && (
+              <span className="flex-shrink-0 text-xs text-[var(--text-tertiary)] bg-[var(--bg-secondary)] px-2 py-0.5 rounded">
+                {messageCount}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Time - Fixed Width */}

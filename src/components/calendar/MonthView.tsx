@@ -1,5 +1,4 @@
 import { format, isSameMonth, isToday, isSameDay, parseISO } from 'date-fns'
-import type { CalendarEvent } from '@/lib/api-client'
 import type { MonthViewProps } from './types'
 
 export default function MonthView({
