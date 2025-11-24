@@ -4,13 +4,14 @@ import { format } from 'date-fns'
 import { supabase } from '@/lib/supabase'
 import { getAllEvents, ensureWatches } from '@/lib/api-client'
 import type { CalendarEvent } from '@/lib/api-client'
-import Sidebar from '@/components/layout/Sidebar'
+import Header from '@/components/layout/Header'
 import CalendarComponent from '@/components/calendar/Calendar'
 import { useDarkMode } from '@/contexts/DarkModeContext'
 
 import EmailLayout from '@/components/email/EmailLayout'
 import { Documents } from '@/components/documents/Documents'
 import { Tasks } from '@/components/tasks'
+import Chat from '@/components/Chat'
 
 type User = {
   id: string
@@ -18,7 +19,7 @@ type User = {
   name: string | null
 }
 
-type ViewType = 'calendar' | 'email' | 'tasks' | 'docs'
+type ViewType = 'chat' | 'calendar' | 'email' | 'tasks' | 'docs'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -26,7 +27,7 @@ export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null)
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
-  const [currentView, setCurrentView] = useState<ViewType>('calendar')
+  const [currentView, setCurrentView] = useState<ViewType>('chat')
   const [lastSynced, setLastSynced] = useState<Date | null>(null)
 
   // Simple in-memory cache
@@ -36,6 +37,7 @@ export default function Dashboard() {
   // Update document title based on current view
   useEffect(() => {
     const viewTitles: Record<ViewType, string> = {
+      chat: 'Core - Chat',
       calendar: 'Core - Calendar',
       email: 'Core - Email',
       tasks: 'Core - Tasks',
@@ -140,6 +142,8 @@ export default function Dashboard() {
 
   const renderView = () => {
     switch (currentView) {
+      case 'chat':
+        return <Chat />
       case 'calendar':
         return (
           <CalendarComponent
@@ -183,14 +187,14 @@ export default function Dashboard() {
 
   return (
     <div 
-      className="h-screen flex overflow-hidden transition-colors duration-200"
+      className="h-screen flex flex-col overflow-hidden transition-colors duration-200"
       style={{ backgroundColor: 'var(--bg-primary)' }}
     >
-      {/* Sidebar */}
-      <Sidebar currentView={currentView} onViewChange={setCurrentView} />
+      {/* Header */}
+      <Header currentView={currentView} onViewChange={setCurrentView} />
       
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden relative" style={{ marginLeft: '72px' }}>
+      <main className="flex-1 overflow-hidden relative">
         {renderView()}
         
         {/* Last Synced Indicator */}

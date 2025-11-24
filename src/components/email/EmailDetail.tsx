@@ -3,6 +3,7 @@ import { format } from 'date-fns'
 import { getThreadEmails, sendEmail } from '@/lib/api-client'
 import type { Email, EmailDetail as EmailDetailType } from '@/lib/api-client'
 import { MdArrowBack, MdSend, MdAttachFile } from 'react-icons/md'
+import EmailBodyRenderer from './EmailBodyRenderer'
 
 interface EmailDetailProps {
   email: Email
@@ -132,16 +133,6 @@ export default function EmailDetail({ email, userId, onClose }: EmailDetailProps
     return match ? match[1] : from
   }
 
-  const stripQuotedText = (body: string): string => {
-    if (!body) return body
-    
-    // Remove Gmail's quoted reply markers
-    let cleaned = body.replace(/On\s+.+?wrote:\s*\n+>?.*/gis, '')
-    cleaned = cleaned.split('\n').filter(line => !line.trim().startsWith('>')).join('\n')
-    cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
-    
-    return cleaned.trim()
-  }
 
   // Determine if message is from current user (sent by me)
   // Simple logic: if the message has 'SENT' label, it was sent by the user
@@ -268,11 +259,11 @@ export default function EmailDetail({ email, userId, onClose }: EmailDetailProps
       </div>
 
       {/* Main Content - Split View */}
-      <div ref={containerRef} className="flex-1 flex overflow-hidden">
+      <div ref={containerRef} className="flex-1 flex overflow-hidden max-w-full">
         
         {/* Left: Messages Area - Chat Bubbles */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 bg-[var(--bg-secondary)]/20">
-          <div className="space-y-4 pr-4">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-6 bg-[var(--bg-secondary)]/20">
+          <div className="space-y-4 pr-4 max-w-full">
             {threadEmails.map((msg, index) => {
               const isFromUser = isFromCurrentUser(msg)
               const showDateDivider = index === 0 || 
@@ -300,20 +291,21 @@ export default function EmailDetail({ email, userId, onClose }: EmailDetailProps
                       </div>
                     )}
 
-                    <div className={`flex flex-col ${isFromUser ? 'items-end' : 'items-start'} max-w-[70%]`}>
+                    <div className={`flex flex-col ${isFromUser ? 'items-end' : 'items-start'} max-w-[70%] min-w-0`}>
                       {/* Message Bubble */}
                       <div
                         className={`
-                          px-4 py-3 rounded-2xl shadow-sm
+                          px-4 py-3 rounded-2xl shadow-sm break-words overflow-hidden
                           ${isFromUser 
                             ? 'bg-blue-600 text-white rounded-br-md' 
                             : 'bg-[var(--bg-primary)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-bl-md'
                           }
                         `}
                       >
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                          {msg.body ? stripQuotedText(msg.body) : msg.snippet}
-                        </div>
+                        <EmailBodyRenderer 
+                          body={msg.body || msg.snippet || ''} 
+                          isFromCurrentUser={isFromUser}
+                        />
 
                         {/* Attachments */}
                         {msg.has_attachments && msg.attachments && msg.attachments.length > 0 && (

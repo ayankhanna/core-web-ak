@@ -236,6 +236,9 @@ export type Email = {
   labels: string[]
   is_unread: boolean
   received_at: string | null
+  ai_analyzed?: boolean
+  ai_summary?: string
+  ai_important?: boolean
   has_attachments: boolean
   attachment_count: number
   message_count?: number  // Number of messages in thread (for threaded view)
@@ -256,8 +259,11 @@ export type EmailDetail = Email & {
 
 /**
  * Fetch emails for a user
+ * 
+ * Note: Default increased to 200 to provide better coverage for AI filtering.
+ * Since we're fetching from the local database (not Gmail API), this is fast.
  */
-export async function fetchEmails(userId: string, maxResults = 50, query?: string) {
+export async function fetchEmails(userId: string, maxResults = 200, query?: string) {
   const params = new URLSearchParams({
     user_id: userId,
     max_results: maxResults.toString(),
@@ -312,17 +318,32 @@ export async function getThreadEmails(userId: string, threadId: string) {
  */
 export async function syncEmails(userId: string) {
   const params = new URLSearchParams({ user_id: userId })
+  const url = `${API_BASE_URL}/api/email/sync?${params}`
+  
+  console.log('🔵 syncEmails called')
+  console.log('   URL:', url)
+  console.log('   userId:', userId)
 
-  const response = await authFetch(`${API_BASE_URL}/api/email/sync?${params}`, {
-    method: 'POST',
-  })
+  try {
+    const response = await authFetch(url, {
+      method: 'POST',
+    })
 
-  if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.detail || 'Failed to sync emails')
+    console.log('🔵 Response received:', response.status, response.statusText)
+
+    if (!response.ok) {
+      const error = await response.json()
+      console.error('❌ Sync failed with error:', error)
+      throw new Error(error.detail || 'Failed to sync emails')
+    }
+
+    const result = await response.json()
+    console.log('✅ Sync successful:', result)
+    return result
+  } catch (error) {
+    console.error('❌ Exception in syncEmails:', error)
+    throw error
   }
-
-  return response.json()
 }
 
 /**

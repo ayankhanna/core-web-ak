@@ -63,31 +63,49 @@ body {
 
 /* Dark Mode */
 .dark {
-  --bg-primary: #000000;
-  --bg-secondary: #111111;
-  --bg-tertiary: #222222;
+  --bg-primary: #212121;
+  --bg-secondary: #2f2f2f;
+  --bg-tertiary: #3a3a3a;
   --text-primary: #ffffff;
   --text-secondary: #a0a0a0;
   --text-tertiary: #666666;
-  --border-color: #333333;
+  --border-color: #404040;
   
   /* Sidebar */
-  --sidebar-bg: #000000;
-  --sidebar-border: #333333;
+  --sidebar-bg: #212121;
+  --sidebar-border: #404040;
   --sidebar-icon: #ffffff;
   --sidebar-icon-active: #ffffff;
-  --sidebar-bg-active: #222222;
-  --sidebar-bg-hover: #111111;
+  --sidebar-bg-active: #2f2f2f;
+  --sidebar-bg-hover: #2a2a2a;
 
   /* Calendar */
-  --calendar-bg: #000000;
-  --calendar-border: #333333;
-  --calendar-header-bg: #000000;
-  --calendar-today-bg: #111111;
+  --calendar-bg: #212121;
+  --calendar-border: #404040;
+  --calendar-header-bg: #212121;
+  --calendar-today-bg: #2f2f2f;
   
   /* Events */
   --event-bg: #ffffff;
   --event-text: #000000;
+}
+
+/* Animation utilities */
+@keyframes bounce {
+  0%, 80%, 100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
+
+.delay-75 {
+  animation-delay: 0.1s;
+}
+
+.delay-150 {
+  animation-delay: 0.2s;
 }
 
 /* React Big Calendar Overrides */

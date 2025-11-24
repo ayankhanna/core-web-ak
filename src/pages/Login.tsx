@@ -92,27 +92,20 @@ export default function Login() {
         }}
       >
         <div className="text-center mb-8">
-          <div 
-            className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center font-bold text-2xl"
-            style={{
-              backgroundColor: isDarkMode ? '#000000' : '#ffffff',
-              color: isDarkMode ? '#ffffff' : '#000000',
-              border: `2px solid ${isDarkMode ? '#333' : '#ddd'}`
-            }}
-          >
-            10x
+          <div className="bg-white dark:bg-[#2f2f2f] p-4 rounded-full shadow-sm mb-6 w-20 h-20 mx-auto flex items-center justify-center">
+            <div className="w-12 h-12 bg-black dark:bg-white rounded-full" />
           </div>
           <h1 
             className="text-3xl font-bold mb-2 transition-colors duration-200"
             style={{ color: 'var(--text-primary)' }}
           >
-            Welcome to 10x
+            Welcome to Core OS
           </h1>
           <p 
             className="transition-colors duration-200"
             style={{ color: 'var(--text-secondary)' }}
           >
-            Your all-in-one productivity app
+            Your intelligent workspace
           </p>
         </div>
 

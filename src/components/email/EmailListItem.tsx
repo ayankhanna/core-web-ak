@@ -49,11 +49,11 @@ export default function EmailListItem({ email, onClick }: EmailListItemProps) {
           )}
         </div>
 
-        {/* Subject and Snippet - Flex Grow */}
+        {/* AI Summary (or Subject) and Snippet - Flex Grow */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate text-[var(--text-primary)]">
-              {email.subject}
+              {email.ai_summary || email.subject}
             </span>
             {hasMultipleMessages && (
               <span className="flex-shrink-0 text-xs text-[var(--text-tertiary)] bg-[var(--bg-secondary)] px-2 py-0.5 rounded">

@@ -375,8 +375,8 @@ export function Documents() {
 
   if (loading && !userId) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+      <div className="flex-1 flex items-center justify-center bg-[var(--bg-primary)]">
+        <div className="text-[var(--text-secondary)]">Loading...</div>
       </div>
     )
   }
@@ -393,7 +393,7 @@ export function Documents() {
   const favoriteDocs = documents.filter(d => d.is_favorite)
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-[var(--bg-primary)]">
       <FolderTree
         documents={documents}
         folders={folders}
